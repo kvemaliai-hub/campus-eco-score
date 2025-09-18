@@ -1,20 +1,32 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { getUsers, getCurrentUser } from '@/lib/storage';
+import { getUsers, getDefaultUser } from '@/lib/supabase-data';
 import { User } from '@/types';
 import { Trophy, Medal, Award } from 'lucide-react';
 
 export default function Leaderboard() {
   const [topUsers, setTopUsers] = useState<User[]>([]);
-  const currentUser = getCurrentUser();
+  const [loading, setLoading] = useState(true);
+  const currentUser = getDefaultUser();
 
   useEffect(() => {
-    const users = getUsers();
-    const sorted = users
-      .sort((a, b) => a.totalEmissions - b.totalEmissions) // Lower emissions = better
-      .slice(0, 10);
-    setTopUsers(sorted);
+    async function loadUsers() {
+      setLoading(true);
+      try {
+        const users = await getUsers();
+        const sorted = users
+          .sort((a, b) => a.totalEmissions - b.totalEmissions) // Lower emissions = better
+          .slice(0, 10);
+        setTopUsers(sorted);
+      } catch (error) {
+        console.error('Error loading users:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadUsers();
   }, []);
 
   return (
@@ -32,6 +44,9 @@ export default function Leaderboard() {
           </CardTitle>
         </CardHeader>
         <CardContent>
+          {loading ? (
+            <p className="text-center text-muted-foreground">Loading...</p>
+          ) : (
           <div className="space-y-4">
             {topUsers.map((user, index) => (
               <div 
@@ -57,8 +72,9 @@ export default function Leaderboard() {
                   <Badge variant="outline">{user.rewardPoints} points</Badge>
                 </div>
               </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

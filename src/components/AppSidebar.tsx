@@ -24,7 +24,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { getCurrentUser, setCurrentUser } from "@/lib/storage";
+import { getDefaultUser } from '@/lib/supabase-data';
 import { useToast } from "@/hooks/use-toast";
 
 const mainItems = [
@@ -44,7 +44,7 @@ export function AppSidebar() {
   const { toast } = useToast();
   const currentPath = location.pathname;
   
-  const currentUser = getCurrentUser();
+  const currentUser = getDefaultUser();
   const isStaff = currentUser?.role === 'staff';
   const isCollapsed = state === 'collapsed';
 
@@ -54,12 +54,10 @@ export function AppSidebar() {
     isActive ? "bg-accent text-primary font-medium" : "hover:bg-accent/50";
 
   const handleLogout = () => {
-    setCurrentUser(null);
     toast({
-      title: "Logged out successfully",
-      description: "See you next time!",
+      title: "Demo mode",
+      description: "This is a demo app. No logout required.",
     });
-    window.location.href = "/";
   };
 
   return (

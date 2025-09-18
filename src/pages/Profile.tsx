@@ -2,24 +2,44 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { getCurrentUser, getUserTransactions, CAFETERIA_ITEMS, saveTransaction, saveUser } from '@/lib/storage';
+import { getDefaultUser, getUserTransactions, getCafeteriaItems, saveTransaction, updateUser } from '@/lib/supabase-data';
 import { useToast } from '@/hooks/use-toast';
 import { User, Award, Gift, Calendar } from 'lucide-react';
 
 export default function Profile() {
   const [transactions, setTransactions] = useState<any[]>([]);
-  const currentUser = getCurrentUser();
+  const [cafeteriaItems, setCafeteriaItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const currentUser = getDefaultUser();
   const { toast } = useToast();
 
   useEffect(() => {
-    if (currentUser) {
-      setTransactions(getUserTransactions(currentUser.id));
+    async function loadData() {
+      setLoading(true);
+      try {
+        const [userTransactions, items] = await Promise.all([
+          getUserTransactions(currentUser.id),
+          getCafeteriaItems()
+        ]);
+        
+        setTransactions(userTransactions);
+        setCafeteriaItems(items.length > 0 ? items : [
+          { name: 'BLU', item: 'Coffee Snack', pointsCost: 50 },
+          { name: 'NEW', item: 'Sandwich Juice', pointsCost: 75 },
+          { name: 'RISE', item: 'Meal Voucher', pointsCost: 120 },
+          { name: 'CUP OF JOE', item: 'Dessert Voucher', pointsCost: 60 },
+        ]);
+      } catch (error) {
+        console.error('Error loading profile data:', error);
+      } finally {
+        setLoading(false);
+      }
     }
-  }, [currentUser]);
 
-  const handleRedeem = (item: any) => {
-    if (!currentUser) return;
-    
+    loadData();
+  }, [currentUser.id]);
+
+  const handleRedeem = async (item: any) => {
     if (currentUser.rewardPoints < item.pointsCost) {
       toast({
         title: "Insufficient Points",
@@ -29,34 +49,45 @@ export default function Profile() {
       return;
     }
 
-    const transaction = {
-      id: Date.now().toString(),
-      userId: currentUser.id,
-      type: 'redeem' as const,
-      points: -item.pointsCost,
-      reason: `Redeemed ${item.item}`,
-      cafeteria: item.name,
-      item: item.item,
-      date: new Date(),
-    };
+    try {
+      const updatedUser = {
+        ...currentUser,
+        rewardPoints: currentUser.rewardPoints - item.pointsCost,
+      };
 
-    const updatedUser = {
-      ...currentUser,
-      rewardPoints: currentUser.rewardPoints - item.pointsCost,
-    };
+      await updateUser(currentUser.id, updatedUser);
+      
+      await saveTransaction({
+        userId: currentUser.id,
+        type: 'redeem',
+        points: -item.pointsCost,
+        reason: `Redeemed ${item.item} from ${item.name}`
+      });
 
-    saveTransaction(transaction);
-    saveUser(updatedUser);
-    setTransactions(getUserTransactions(currentUser.id));
+      // Refresh transactions
+      const userTransactions = await getUserTransactions(currentUser.id);
+      setTransactions(userTransactions);
 
-    toast({
-      title: "Redemption Successful!",
-      description: `${item.item} voucher from ${item.name} redeemed!`,
-    });
+      toast({
+        title: "Redemption Successful!",
+        description: `${item.item} voucher from ${item.name} redeemed!`,
+      });
+    } catch (error) {
+      console.error('Error redeeming item:', error);
+      toast({
+        title: "Error",
+        description: "Failed to redeem item. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
-  if (!currentUser) {
-    return <div className="text-center">Please log in to view your profile.</div>;
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <p className="text-muted-foreground">Loading profile data...</p>
+      </div>
+    );
   }
 
   return (
@@ -116,8 +147,8 @@ export default function Profile() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {CAFETERIA_ITEMS.map((item) => (
-              <div key={item.name} className="p-4 border rounded-lg">
+            {cafeteriaItems.map((item, index) => (
+              <div key={index} className="p-4 border rounded-lg">
                 <h3 className="font-semibold">{item.name}</h3>
                 <p className="text-sm text-muted-foreground">{item.item}</p>
                 <div className="mt-2 flex items-center justify-between">

@@ -14,7 +14,7 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { getCurrentUser, getUserActivities, getUsers, getActivities } from '@/lib/storage';
+import { getDefaultUser, getUsers, getUserActivities, getActivities } from '@/lib/supabase-data';
 import { Activity, User } from '@/types';
 import { TrendingDown, TrendingUp, Award, Users, Zap, Car } from 'lucide-react';
 
@@ -37,56 +37,48 @@ export default function Dashboard() {
     avgDailyEmissions: 0,
     userRank: 0,
   });
+  const [loading, setLoading] = useState(true);
 
-  const currentUser = getCurrentUser();
+  const currentUser = getDefaultUser();
 
   useEffect(() => {
-    if (!currentUser) return;
+    async function loadData() {
+      setLoading(true);
+      try {
+        const [activities, allUsers, allActivities] = await Promise.all([
+          getUserActivities(currentUser.id),
+          getUsers(),
+          getActivities()
+        ]);
 
-    const activities = getUserActivities(currentUser.id);
-    const allUsers = getUsers();
-    const allActivities = getActivities();
+        setUserActivities(activities);
 
-    // Calculate user's daily emissions for the last 14 days
-    const last14Days = Array.from({ length: 14 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (13 - i));
-      return date.toISOString().split('T')[0];
-    });
+        // Calculate campus stats
+        const totalEmissions = allActivities.reduce((sum, a) => sum + a.totalEmissions, 0);
+        const avgDaily = totalEmissions / Math.max(allActivities.length, 1);
 
-    const dailyEmissions = last14Days.map(date => {
-      const dayActivities = activities.filter(a => a.date === date);
-      return dayActivities.reduce((sum, a) => sum + a.totalEmissions, 0);
-    });
+        // Calculate user rank (based on total emissions - lower is better)
+        const rankedUsers = allUsers
+          .sort((a, b) => a.totalEmissions - b.totalEmissions)
+          .map((user, index) => ({ ...user, rank: index + 1 }));
+        
+        const userRank = rankedUsers.find(u => u.id === currentUser.id)?.rank || 0;
 
-    setUserActivities(activities);
+        setDashboardStats({
+          totalUsers: allUsers.length,
+          campusEmissions: totalEmissions,
+          avgDailyEmissions: avgDaily,
+          userRank,
+        });
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
 
-    // Calculate campus stats
-    const totalEmissions = allActivities.reduce((sum, a) => sum + a.totalEmissions, 0);
-    const avgDaily = totalEmissions / Math.max(allActivities.length, 1);
-
-    // Calculate user rank (based on total emissions - lower is better)
-    const rankedUsers = allUsers
-      .sort((a, b) => a.totalEmissions - b.totalEmissions)
-      .map((user, index) => ({ ...user, rank: index + 1 }));
-    
-    const userRank = rankedUsers.find(u => u.id === currentUser.id)?.rank || 0;
-
-    setDashboardStats({
-      totalUsers: allUsers.length,
-      campusEmissions: totalEmissions,
-      avgDailyEmissions: avgDaily,
-      userRank,
-    });
-  }, [currentUser]);
-
-  if (!currentUser) {
-    return (
-      <div className="flex items-center justify-center min-h-96">
-        <p className="text-muted-foreground">Please log in to view your dashboard.</p>
-      </div>
-    );
-  }
+    loadData();
+  }, [currentUser.id]);
 
   // Chart data for last 14 days
   const last14Days = Array.from({ length: 14 }, (_, i) => {
@@ -151,6 +143,14 @@ export default function Dashboard() {
   const dailyTarget = 5.0; // kg CO₂
   const weeklyTarget = dailyTarget * 7;
   const progressPercent = Math.min((weeklyTarget - weeklyEmissions) / weeklyTarget * 100, 100);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-96">
+        <p className="text-muted-foreground">Loading dashboard data...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

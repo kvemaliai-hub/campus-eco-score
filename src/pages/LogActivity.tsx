@@ -6,9 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { getCurrentUser, saveActivity, saveTransaction, saveUser } from '@/lib/storage';
-import { calculateEmissions, calculatePoints, getEmissionFactors } from '@/lib/emissions';
-import { Activity, Transaction } from '@/types';
+import { getDefaultUser, saveActivity, saveTransaction, updateUser, getEmissionFactors } from '@/lib/supabase-data';
+import { Activity, Transaction, EmissionFactors } from '@/types';
 import { Car, Utensils, Zap, Calculator, Award } from 'lucide-react';
 
 export default function LogActivity() {
@@ -19,44 +18,84 @@ export default function LogActivity() {
     foodItem: '',
     electricityKwh: '',
   });
-  const [isLoading, setIsLoading] = useState(false);
-  const [emissionFactors, setEmissionFactors] = useState(getEmissionFactors());
-  const [previewEmissions, setPreviewEmissions] = useState({
-    travelEmissions: 0,
-    foodEmissions: 0,
-    electricityEmissions: 0,
-    totalEmissions: 0,
+  const [loading, setLoading] = useState(false);
+  const [emissionFactors, setEmissionFactors] = useState<EmissionFactors>({
+    transport: {},
+    food: {},
+    electricity: 0.7
   });
 
   const { toast } = useToast();
   const navigate = useNavigate();
-  const currentUser = getCurrentUser();
+  const currentUser = getDefaultUser();
 
   useEffect(() => {
-    // Update emission factors when component mounts
-    setEmissionFactors(getEmissionFactors());
+    async function loadEmissionFactors() {
+      try {
+        const factors = await getEmissionFactors();
+        setEmissionFactors(factors);
+
+        // If no data from database, use defaults
+        if (Object.keys(factors.transport).length === 0) {
+          setEmissionFactors({
+            transport: {
+              'Walk': 0,
+              'Cycle': 0,
+              'Bus': 0.06,
+              'Bike': 0.09,
+              'Car': 0.21
+            },
+            food: {
+              'Vegan': 1.1,
+              'Veg': 1.7,
+              'Non-Veg': 2.5,
+              'Red-Meat': 6.5
+            },
+            electricity: 0.7
+          });
+        }
+      } catch (error) {
+        console.error('Error loading emission factors:', error);
+        // Use default values
+        setEmissionFactors({
+          transport: {
+            'Walk': 0,
+            'Cycle': 0,
+            'Bus': 0.06,
+            'Bike': 0.09,
+            'Car': 0.21
+          },
+          food: {
+            'Vegan': 1.1,
+            'Veg': 1.7,
+            'Non-Veg': 2.5,
+            'Red-Meat': 6.5
+          },
+          electricity: 0.7
+        });
+      }
+    }
+
+    loadEmissionFactors();
   }, []);
 
-  useEffect(() => {
-    // Calculate preview emissions whenever form data changes
-    if (formData.travelMode && formData.distanceKm && formData.foodItem) {
-      const emissions = calculateEmissions(
-        formData.travelMode,
-        parseFloat(formData.distanceKm) || 0,
-        formData.foodItem,
-        parseFloat(formData.electricityKwh) || 0,
-        emissionFactors
-      );
-      setPreviewEmissions(emissions);
-    } else {
-      setPreviewEmissions({
-        travelEmissions: 0,
-        foodEmissions: 0,
-        electricityEmissions: 0,
-        totalEmissions: 0,
-      });
-    }
-  }, [formData, emissionFactors]);
+  // Calculate preview emissions
+  const previewEmissions = () => {
+    const distance = parseFloat(formData.distanceKm) || 0;
+    const electricity = parseFloat(formData.electricityKwh) || 0;
+    
+    const travelEmission = distance * (emissionFactors.transport[formData.travelMode] || 0);
+    const foodEmission = emissionFactors.food[formData.foodItem] || 0;
+    const electricityEmission = electricity * emissionFactors.electricity;
+    const total = travelEmission + foodEmission + electricityEmission;
+    
+    return {
+      travel: travelEmission,
+      food: foodEmission,
+      electricity: electricityEmission,
+      total
+    };
+  };
 
   if (!currentUser) {
     return (
