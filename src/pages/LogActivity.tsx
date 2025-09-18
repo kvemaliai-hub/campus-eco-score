@@ -1,33 +1,34 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { getDefaultUser, saveActivity, saveTransaction, updateUser, getEmissionFactors } from '@/lib/supabase-data';
-import { Activity, Transaction, EmissionFactors } from '@/types';
-import { Car, Utensils, Zap, Calculator, Award } from 'lucide-react';
+import { getDefaultUser, saveActivity, updateUser, saveTransaction, getEmissionFactors } from '@/lib/supabase-data';
+import { EmissionFactors } from '@/types';
+import { Car, Utensils, Zap, Target, Calculator } from 'lucide-react';
 
 export default function LogActivity() {
-  const [formData, setFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
-    travelMode: '',
-    distanceKm: '',
-    foodItem: '',
-    electricityKwh: '',
-  });
   const [loading, setLoading] = useState(false);
   const [emissionFactors, setEmissionFactors] = useState<EmissionFactors>({
     transport: {},
     food: {},
     electricity: 0.7
   });
+  
+  const [formData, setFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    travelMode: '',
+    distance: '',
+    foodItem: '',
+    electricity: ''
+  });
 
-  const { toast } = useToast();
-  const navigate = useNavigate();
   const currentUser = getDefaultUser();
+  const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     async function loadEmissionFactors() {
@@ -81,8 +82,8 @@ export default function LogActivity() {
 
   // Calculate preview emissions
   const previewEmissions = () => {
-    const distance = parseFloat(formData.distanceKm) || 0;
-    const electricity = parseFloat(formData.electricityKwh) || 0;
+    const distance = parseFloat(formData.distance) || 0;
+    const electricity = parseFloat(formData.electricity) || 0;
     
     const travelEmission = distance * (emissionFactors.transport[formData.travelMode] || 0);
     const foodEmission = emissionFactors.food[formData.foodItem] || 0;
@@ -97,97 +98,78 @@ export default function LogActivity() {
     };
   };
 
-  if (!currentUser) {
-    return (
-      <div className="flex items-center justify-center min-h-96">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <p className="text-center text-muted-foreground">
-              Please log in to track your activities.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.travelMode || !formData.distanceKm || !formData.foodItem) {
+    
+    if (!formData.travelMode || !formData.foodItem) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields",
+        description: "Please select both travel mode and food item.",
         variant: "destructive",
       });
       return;
     }
 
-    setIsLoading(true);
+    setLoading(true);
 
     try {
-      const emissions = calculateEmissions(
-        formData.travelMode,
-        parseFloat(formData.distanceKm),
-        formData.foodItem,
-        parseFloat(formData.electricityKwh) || 0,
-        emissionFactors
-      );
-
-      // Create activity record
-      const activity: Activity = {
-        id: Date.now().toString(),
+      const emissions = previewEmissions();
+      
+      // Save activity
+      const activityData = {
         userId: currentUser.id,
         date: formData.date,
         travelMode: formData.travelMode,
-        distanceKm: parseFloat(formData.distanceKm),
+        distanceKm: parseFloat(formData.distance) || 0,
         foodItem: formData.foodItem,
-        electricityKwh: parseFloat(formData.electricityKwh) || 0,
-        ...emissions,
-        createdAt: new Date(),
+        electricityKwh: parseFloat(formData.electricity) || 0,
+        travelEmissions: emissions.travel,
+        foodEmissions: emissions.food,
+        electricityEmissions: emissions.electricity,
+        totalEmissions: emissions.total
       };
 
-      saveActivity(activity);
+      await saveActivity(activityData);
 
-      // Update user's total emissions
+      // Update user's total emissions and calculate points
+      const updatedTotalEmissions = currentUser.totalEmissions + emissions.total;
+      const dailyThreshold = 5.0; // kg CO₂
+      let pointsEarned = 0;
+
+      if (emissions.total <= dailyThreshold) {
+        pointsEarned = Math.floor(100 + (dailyThreshold - emissions.total) * 20);
+      }
+
       const updatedUser = {
         ...currentUser,
-        totalEmissions: currentUser.totalEmissions + emissions.totalEmissions,
+        totalEmissions: updatedTotalEmissions,
+        rewardPoints: currentUser.rewardPoints + pointsEarned
       };
 
-      // Calculate and award points
-      const pointsEarned = calculatePoints(emissions.totalEmissions);
-      if (pointsEarned > 0) {
-        updatedUser.rewardPoints += pointsEarned;
+      await updateUser(currentUser.id, updatedUser);
 
-        // Create points transaction
-        const transaction: Transaction = {
-          id: Date.now().toString() + '_points',
+      // Save transaction for points earned
+      if (pointsEarned > 0) {
+        await saveTransaction({
           userId: currentUser.id,
           type: 'earn',
           points: pointsEarned,
-          reason: emissions.totalEmissions <= 5.0 
-            ? `Low daily emissions (${emissions.totalEmissions.toFixed(1)} kg CO₂)`
-            : `Daily activity logged`,
-          date: new Date(),
-        };
-
-        saveTransaction(transaction);
+          reason: 'Daily activity logged - eco-friendly choices!'
+        });
       }
 
-      saveUser(updatedUser);
-
       toast({
-        title: "Activity Logged!",
-        description: `Added ${emissions.totalEmissions.toFixed(1)} kg CO₂ to your footprint. ${pointsEarned > 0 ? `Earned ${pointsEarned} points!` : ''}`,
+        title: "Activity Logged Successfully!",
+        description: `Total emissions: ${emissions.total.toFixed(1)} kg CO₂${pointsEarned > 0 ? ` • Earned ${pointsEarned} points!` : ''}`,
       });
 
       // Reset form
       setFormData({
         date: new Date().toISOString().split('T')[0],
         travelMode: '',
-        distanceKm: '',
+        distance: '',
         foodItem: '',
-        electricityKwh: '',
+        electricity: ''
       });
 
       // Navigate to dashboard after a short delay
@@ -203,215 +185,204 @@ export default function LogActivity() {
         variant: "destructive",
       });
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  const transportModes = Object.keys(emissionFactors.transport);
-  const foodItems = Object.keys(emissionFactors.food);
+  const emissions = previewEmissions();
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <div>
+      <div className="text-center">
         <h1 className="text-3xl font-bold">Log Daily Activity</h1>
         <p className="text-muted-foreground">
-          Track your carbon footprint and earn reward points for sustainable choices.
+          Track your carbon footprint and earn points for sustainable choices
         </p>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
+        {/* Form */}
         <div className="lg:col-span-2">
-          <Card className="shadow-card">
-            <CardHeader>
-              <CardTitle>Activity Details</CardTitle>
-              <CardDescription>
-                Enter your daily activities to calculate your carbon footprint
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-6">
-                {/* Date */}
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Date */}
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="text-lg">Activity Date</CardTitle>
+              </CardHeader>
+              <CardContent>
                 <div className="space-y-2">
                   <Label htmlFor="date">Date</Label>
                   <Input
                     id="date"
                     type="date"
                     value={formData.date}
-                    onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
                     max={new Date().toISOString().split('T')[0]}
+                    onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                     required
                   />
                 </div>
+              </CardContent>
+            </Card>
 
-                {/* Travel */}
-                <div className="space-y-4 p-4 border rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Car className="h-4 w-4 text-campus-primary" />
-                    <h3 className="font-semibold">Transportation</h3>
-                  </div>
-                  
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="travelMode">Travel Mode</Label>
-                      <Select 
-                        value={formData.travelMode} 
-                        onValueChange={(value) => setFormData(prev => ({ ...prev, travelMode: value }))}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select travel mode" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {transportModes.map((mode) => (
-                            <SelectItem key={mode} value={mode}>
-                              {mode} ({emissionFactors.transport[mode]} kg CO₂/km)
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="distance">Distance (km)</Label>
-                      <Input
-                        id="distance"
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        placeholder="0.0"
-                        value={formData.distanceKm}
-                        onChange={(e) => setFormData(prev => ({ ...prev, distanceKm: e.target.value }))}
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Food */}
-                <div className="space-y-4 p-4 border rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Utensils className="h-4 w-4 text-campus-secondary" />
-                    <h3 className="font-semibold">Food</h3>
-                  </div>
-                  
+            {/* Transportation */}
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Car className="h-5 w-5" />
+                  Transportation
+                </CardTitle>
+                <CardDescription>How did you travel today?</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="foodItem">Meal Type</Label>
-                    <Select 
-                      value={formData.foodItem} 
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, foodItem: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select meal type" />
+                    <Label htmlFor="travelMode">Travel Mode</Label>
+                    <Select value={formData.travelMode} onValueChange={(value) => setFormData({ ...formData, travelMode: value })}>
+                      <SelectTrigger id="travelMode">
+                        <SelectValue placeholder="Select travel mode" />
                       </SelectTrigger>
                       <SelectContent>
-                        {foodItems.map((item) => (
-                          <SelectItem key={item} value={item}>
-                            {item} ({emissionFactors.food[item]} kg CO₂/meal)
+                        {Object.keys(emissionFactors.transport).map((mode) => (
+                          <SelectItem key={mode} value={mode}>
+                            {mode} ({emissionFactors.transport[mode]} kg CO₂/km)
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-
-                {/* Electricity */}
-                <div className="space-y-4 p-4 border rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-campus-warning" />
-                    <h3 className="font-semibold">Electricity (Optional)</h3>
-                  </div>
-                  
                   <div className="space-y-2">
-                    <Label htmlFor="electricity">Energy Usage (kWh)</Label>
+                    <Label htmlFor="distance">Distance (km)</Label>
                     <Input
-                      id="electricity"
+                      id="distance"
                       type="number"
                       step="0.1"
                       min="0"
                       placeholder="0.0"
-                      value={formData.electricityKwh}
-                      onChange={(e) => setFormData(prev => ({ ...prev, electricityKwh: e.target.value }))}
+                      value={formData.distance}
+                      onChange={(e) => setFormData({ ...formData, distance: e.target.value })}
                     />
-                    <p className="text-xs text-muted-foreground">
-                      Electricity factor: {emissionFactors.electricity} kg CO₂/kWh
-                    </p>
                   </div>
                 </div>
+              </CardContent>
+            </Card>
 
-                <Button 
-                  type="submit" 
-                  className="w-full" 
-                  size="lg"
-                  disabled={isLoading}
-                >
-                  {isLoading ? "Calculating..." : "Log Activity"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+            {/* Food */}
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Utensils className="h-5 w-5" />
+                  Food Consumption
+                </CardTitle>
+                <CardDescription>What type of meals did you have?</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="foodItem">Primary Food Type</Label>
+                  <Select value={formData.foodItem} onValueChange={(value) => setFormData({ ...formData, foodItem: value })}>
+                    <SelectTrigger id="foodItem">
+                      <SelectValue placeholder="Select food type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(emissionFactors.food).map((food) => (
+                        <SelectItem key={food} value={food}>
+                          {food} ({emissionFactors.food[food]} kg CO₂/meal)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Electricity */}
+            <Card className="shadow-card">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Electricity Usage (Optional)
+                </CardTitle>
+                <CardDescription>Additional electricity consumption</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Label htmlFor="electricity">Electricity (kWh)</Label>
+                  <Input
+                    id="electricity"
+                    type="number"
+                    step="0.1"
+                    min="0"
+                    placeholder="0.0"
+                    value={formData.electricity}
+                    onChange={(e) => setFormData({ ...formData, electricity: e.target.value })}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Emission factor: {emissionFactors.electricity} kg CO₂/kWh
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Button type="submit" className="w-full" size="lg" disabled={loading}>
+              {loading ? 'Calculating...' : 'Log Activity & Calculate Emissions'}
+              <Calculator className="ml-2 h-4 w-4" />
+            </Button>
+          </form>
         </div>
 
-        {/* Emissions Preview */}
-        <div className="space-y-4">
+        {/* Preview Panel */}
+        <div className="space-y-6">
+          {/* Emissions Preview */}
           <Card className="shadow-card">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Calculator className="h-4 w-4" />
+                <Calculator className="h-5 w-5" />
                 Emissions Preview
               </CardTitle>
+              <CardDescription>Live calculation based on your inputs</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Travel:</span>
-                  <span>{previewEmissions.travelEmissions.toFixed(3)} kg CO₂</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Food:</span>
-                  <span>{previewEmissions.foodEmissions.toFixed(3)} kg CO₂</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Electricity:</span>
-                  <span>{previewEmissions.electricityEmissions.toFixed(3)} kg CO₂</span>
-                </div>
-                <div className="border-t pt-2">
-                  <div className="flex justify-between font-semibold">
-                    <span>Total:</span>
-                    <span className={previewEmissions.totalEmissions <= 5 ? "text-campus-success" : "text-campus-warning"}>
-                      {previewEmissions.totalEmissions.toFixed(3)} kg CO₂
-                    </span>
-                  </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Travel:</span>
+                <span className="font-medium">{emissions.travel.toFixed(2)} kg CO₂</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Food:</span>
+                <span className="font-medium">{emissions.food.toFixed(2)} kg CO₂</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-sm">Electricity:</span>
+                <span className="font-medium">{emissions.electricity.toFixed(2)} kg CO₂</span>
+              </div>
+              <div className="border-t pt-2">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Total:</span>
+                  <span className="font-bold text-lg">{emissions.total.toFixed(2)} kg CO₂</span>
                 </div>
               </div>
-
-              {previewEmissions.totalEmissions > 0 && (
-                <div className="mt-4 p-3 bg-accent/50 rounded-lg">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Award className="h-4 w-4" />
-                    <span className="font-medium">
-                      Potential Points: {calculatePoints(previewEmissions.totalEmissions)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {previewEmissions.totalEmissions <= 5 
-                      ? "Great job staying under the 5kg daily target!" 
-                      : "Try to reduce emissions to earn more points!"}
-                  </p>
-                </div>
-              )}
             </CardContent>
           </Card>
 
+          {/* Daily Target */}
           <Card className="shadow-card">
             <CardHeader>
-              <CardTitle>Daily Target</CardTitle>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-5 w-5" />
+                Daily Target
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-campus-success">5.0 kg</div>
-                <p className="text-sm text-muted-foreground">CO₂ per day</p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  Stay under this target to earn bonus reward points!
+              <div className="text-center space-y-2">
+                <div className="text-2xl font-bold">5.0 kg CO₂</div>
+                <p className="text-sm text-muted-foreground">
+                  Stay below this to earn bonus points
                 </p>
+                {emissions.total <= 5.0 && emissions.total > 0 && (
+                  <div className="mt-4 p-3 bg-campus-success/10 rounded-lg border border-campus-success/20">
+                    <p className="text-sm font-medium text-campus-success">
+                      🎉 Great job! You'll earn {Math.floor(100 + (5.0 - emissions.total) * 20)} points!
+                    </p>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
