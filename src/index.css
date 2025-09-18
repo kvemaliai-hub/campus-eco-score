@@ -2,57 +2,69 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Green Campus Carbon Tracker Design System */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Campus Green Theme */
+    --background: 120 60% 98%;
+    --foreground: 120 12% 15%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 120 12% 15%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 120 12% 15%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 142 71% 45%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 120 20% 95%;
+    --secondary-foreground: 120 12% 25%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 120 15% 96%;
+    --muted-foreground: 120 8% 50%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 142 60% 88%;
+    --accent-foreground: 142 71% 25%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 120 20% 90%;
+    --input: 120 20% 90%;
+    --ring: 142 71% 45%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Campus specific colors */
+    --campus-primary: 142 71% 45%;
+    --campus-secondary: 87 85% 65%;
+    --campus-accent: 178 100% 85%;
+    --campus-success: 120 60% 50%;
+    --campus-warning: 45 100% 60%;
+    --campus-error: 0 84% 60%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    /* Gradients */
+    --gradient-campus: linear-gradient(135deg, hsl(142 71% 45%), hsl(87 85% 65%));
+    --gradient-success: linear-gradient(135deg, hsl(120 60% 50%), hsl(142 71% 45%));
+    --gradient-eco: linear-gradient(180deg, hsl(120 60% 98%), hsl(120 20% 95%));
 
-    --sidebar-primary: 240 5.9% 10%;
+    /* Shadows */
+    --shadow-campus: 0 4px 20px -4px hsl(142 71% 45% / 0.15);
+    --shadow-card: 0 2px 10px -2px hsl(120 12% 15% / 0.08);
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-background: 120 60% 98%;
+    --sidebar-foreground: 120 12% 25%;
+    --sidebar-primary: 142 71% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 120 20% 95%;
+    --sidebar-accent-foreground: 120 12% 25%;
+    --sidebar-border: 120 20% 90%;
+    --sidebar-ring: 142 71% 45%;
   }
 
   .dark {
